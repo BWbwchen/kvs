@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use kvs::{KvStore, KvsError, Result};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -38,21 +39,22 @@ enum Commands {
     },
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    let mut store = KvStore::open(kvs::DEFAULT_LOG_FILE)?;
+
     match &cli.command {
-        Some(Commands::Set { k, v }) => {
-            unimplemented!("unimplemented")
-        }
+        Some(Commands::Set { k, v }) => store.set(k.to_owned(), v.to_owned())?,
         Some(Commands::Get { k }) => {
-            unimplemented!("unimplemented")
+            if let Some(v) = store.get(k.to_owned())? {
+                println!("{}", v);
+            } else {
+                println!("Key not found");
+            }
         }
-        Some(Commands::Rm { k }) => {
-            unimplemented!("unimplemented")
-        }
-        None => {
-            panic!("Only accept set, get, rm")
-        }
-    }
+        Some(Commands::Rm { k }) => store.remove(k.to_owned())?,
+        _ => unreachable!(),
+    };
+    Ok(())
 }
