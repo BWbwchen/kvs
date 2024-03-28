@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::{collections::HashMap, fs::File};
 use uuid::Uuid;
 
-use crate::{KvsError, Result, DEFAULT_LOG_FILE};
+use crate::{KvsError, Result};
 
 const MAX_LOG_UNCOMPACTED_BYTES: u64 = 1024 * 1024;
 
@@ -44,9 +44,6 @@ impl CmdIdx {
     fn new(start: usize, len: usize, cmd: Cmd) -> Self {
         Self { start, len, cmd }
     }
-    fn default() -> Self {
-        Self::new(0, 0, Cmd::Empty)
-    }
 }
 
 /// The Command struct will represent an entry in the log
@@ -55,6 +52,15 @@ enum Cmd {
     Set { key: String, value: String },
     Remove { key: String },
     Empty,
+}
+impl Cmd {
+    fn get_key(&self) -> &String {
+        match &self {
+            Cmd::Empty => unreachable!(),
+            Cmd::Set { key, .. } => key,
+            Cmd::Remove { key } => key,
+        }
+    }
 }
 
 impl KvStore {
@@ -83,12 +89,8 @@ impl KvStore {
             Some(cmd_idx) => {
                 // read from log
                 self.logger
-                    .seek(SeekFrom::Start(cmd_idx.start.try_into().unwrap()))?;
-                let reader = self
-                    .logger
-                    .reader
-                    .get_mut()
-                    .take(cmd_idx.len.try_into().unwrap());
+                    .seek(SeekFrom::Start(cmd_idx.start.try_into()?))?;
+                let reader = self.logger.reader.get_mut().take(cmd_idx.len.try_into()?);
                 if let Cmd::Set { value, .. } = serde_json::from_reader(reader)? {
                     Ok(Some(value))
                 } else {
@@ -129,8 +131,7 @@ impl KvStore {
         };
 
         // reconstruct the index
-        let mut reader =
-            Deserializer::from_reader(std::io::Read::by_ref(&mut ret.logger)).into_iter::<Cmd>();
+        let mut reader = Deserializer::from_reader(&mut ret.logger).into_iter();
 
         let mut read_pos = 0;
         // for cmd in reader {
@@ -138,18 +139,11 @@ impl KvStore {
             let len = reader.byte_offset() - read_pos;
             let mut cmd_idx = CmdIdx::new(read_pos, len, Cmd::Empty);
             match cmd? {
-                Cmd::Set { key, value } => {
-                    cmd_idx.cmd = Cmd::Set {
-                        key: key.clone(),
-                        value,
-                    };
-                    ret.index.insert(key.clone(), cmd_idx);
-                }
-                Cmd::Remove { key } => {
-                    cmd_idx.cmd = Cmd::Remove { key: key.clone() };
-                    ret.index.insert(key.clone(), cmd_idx);
-                }
                 Cmd::Empty => return Err(KvsError::UnexpectedCommandType.into()),
+                valid_cmd => {
+                    cmd_idx.cmd = valid_cmd.clone();
+                    ret.index.insert(valid_cmd.get_key().clone(), cmd_idx);
+                }
             }
             read_pos += len;
         }
@@ -166,7 +160,7 @@ impl KvStore {
         let new_log = old_log
             .parent()
             .ok_or(KvsError::UnexpectedCommandType)?
-            .join(format!("{}.log", Uuid::new_v4().to_string()));
+            .join(format!("{}.log", Uuid::new_v4()));
         self.logger.writer = BufWriter::new(get_file_handler(&new_log)?);
 
         let mut new_index: HashMap<String, CmdIdx> = HashMap::new();
@@ -187,7 +181,6 @@ impl KvStore {
         self.uncompacted = 0;
 
         // remember to remove the file
-        println!("About to remove: {}", old_log.to_str().unwrap());
         std::fs::remove_file(&old_log)?;
         Ok(())
     }
@@ -195,7 +188,6 @@ impl KvStore {
 
 fn get_file_handler(path: impl Into<PathBuf>) -> Result<File> {
     Ok(OpenOptions::new()
-        .write(true)
         .read(true)
         .append(true)
         .create(true)
@@ -206,30 +198,22 @@ fn get_log_name(path: impl Into<PathBuf>) -> Result<PathBuf> {
     // If there was no log file in the `path` directory, create one with uuid file name.
     // Else we reuse the existing file.
     let pathbuf = path.into();
-    let default_pathbuf = pathbuf.join(format!("{}.log", Uuid::new_v4().to_string()));
-    let file_name = match read_dir(pathbuf.as_path()).into_iter().next() {
-        Some(dir) => {
-            let mut ret = default_pathbuf.clone();
-            for file in dir.into_iter() {
-                match file {
-                    Ok(file_path) => {
-                        if file_path.path().as_path().extension() == Some("log".as_ref())
-                            && ret == default_pathbuf
-                        {
-                            ret = file_path.path();
-                        }
-                    }
-                    _ => continue,
-                };
-            }
-            ret
-        }
-        None => default_pathbuf,
-    };
+    let default_pathbuf = pathbuf.join(format!("{}.log", Uuid::new_v4()));
 
+    // Create directory if pathbuf not exist
     if read_dir(&pathbuf).is_err() {
         create_dir(&pathbuf)?;
     }
+
+    let file_name = read_dir(&pathbuf)?.fold(default_pathbuf.clone(), |ret, file| {
+        let file_path = file.unwrap().path();
+        if file_path.extension() == Some("log".as_ref()) && ret == default_pathbuf {
+            file_path
+        } else {
+            ret
+        }
+    });
+
     Ok(file_name)
 }
 
@@ -241,7 +225,7 @@ struct Logger {
     read_pos: usize, // for construct the cache
 }
 impl Logger {
-    fn new(path: impl Into<PathBuf> + std::marker::Copy) -> Result<Self> {
+    fn new(path: impl Into<PathBuf>) -> Result<Logger> {
         let filename = get_log_name(path)?;
         Ok(Logger {
             filename: filename.clone(),

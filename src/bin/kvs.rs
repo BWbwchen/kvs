@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
-use kvs::{KvStore, KvsError, Result};
-use std::path::PathBuf;
+use kvs::{KvStore, Result};
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"))]
