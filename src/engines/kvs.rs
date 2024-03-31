@@ -165,6 +165,7 @@ impl KvStore {
             .ok_or(KvsError::UnexpectedCommandType)?
             .join(format!("{}.log", Uuid::new_v4()));
         self.logger.writer = BufWriter::new(get_file_handler(&new_log)?);
+        self.logger.pos = 0;
 
         let mut new_index: HashMap<String, CmdIdx> = HashMap::new();
         let mut pos = 0;
@@ -180,6 +181,7 @@ impl KvStore {
         self.logger.reader = BufReader::new(get_file_handler(&new_log)?);
         self.index = new_index;
 
+        self.logger.filename = new_log;
         self.logger.pos = pos;
         self.uncompacted = 0;
 
