@@ -13,6 +13,9 @@ pub enum KvsError {
     /// Removing an non-existent key error
     #[error("Key not found")]
     KeyNotFound,
+    /// Misc error type with message
+    #[error("{0}")]
+    StringError(String),
     /// Unexpected command error
     #[error("Unexpected command type")]
     UnexpectedCommandType,

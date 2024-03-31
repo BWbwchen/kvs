@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use kvs::{KvStore, Result};
+use kvs::{KvStore, KvsEngine, Result};
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"))]

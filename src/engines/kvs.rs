@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::{collections::HashMap, fs::File};
 use uuid::Uuid;
 
-use crate::{KvsError, Result};
+use crate::{KvsEngine, KvsError, Result};
 
 const MAX_LOG_UNCOMPACTED_BYTES: u64 = 1024 * 1024;
 
@@ -16,7 +16,7 @@ const MAX_LOG_UNCOMPACTED_BYTES: u64 = 1024 * 1024;
 ///
 /// Example:
 /// ```rust
-/// # use kvs::{KvStore, Result};
+/// # use crate::kvs::{KvStore, Result, KvsEngine};
 ///
 /// # fn main() -> Result<()> {
 /// let mut store = KvStore::open(kvs::DEFAULT_LOG_FILE)?;
@@ -63,9 +63,9 @@ impl Cmd {
     }
 }
 
-impl KvStore {
+impl KvsEngine for KvStore {
     /// Set key `k` to value `v`
-    pub fn set(&mut self, k: String, v: String) -> Result<()> {
+    fn set(&mut self, k: String, v: String) -> Result<()> {
         let cmd = Cmd::Set {
             key: k.to_owned(),
             value: v.clone(),
@@ -84,7 +84,7 @@ impl KvStore {
     }
 
     /// Get the value of key `k`
-    pub fn get(&mut self, k: String) -> Result<Option<String>> {
+    fn get(&mut self, k: String) -> Result<Option<String>> {
         match self.index.get(&k) {
             Some(cmd_idx) => {
                 // read from log
@@ -103,7 +103,7 @@ impl KvStore {
     }
 
     /// Remove the key `k`
-    pub fn remove(&mut self, k: String) -> Result<()> {
+    fn remove(&mut self, k: String) -> Result<()> {
         // Check whether key is exist.
         self.index.get(&k).ok_or(KvsError::KeyNotFound)?;
 
@@ -121,9 +121,12 @@ impl KvStore {
         }
         Ok(())
     }
+}
+
+impl KvStore {
     /// Open KvStore
     /// `path` is the directory of the log
-    pub fn open(path: impl Into<PathBuf> + std::marker::Copy) -> Result<Self> {
+    pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let mut ret = KvStore {
             logger: Logger::new(path)?,
             index: HashMap::new(),
